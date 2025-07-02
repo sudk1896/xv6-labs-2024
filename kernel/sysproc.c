@@ -7,6 +7,16 @@
 #include "proc.h"
 
 uint64
+sys_trace(void)
+{
+  int n;
+  argint(0, &n);
+  printf("mask val: %d\n", n);
+  myproc()->tracemask = n;
+  return 0;
+}
+
+uint64
 sys_exit(void)
 {
   int n;

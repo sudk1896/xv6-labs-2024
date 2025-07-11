@@ -1,0 +1,12 @@
+0x5B -> valid page, read only, Executable, User mode process can access
+0x17 -> valid, read and write, user mode process can access
+0x7 -> Valid page, read and write, user mode process can't access
+0xD7 -> valid page, read and write, User mode process can access
+0xC7 -> Valid, read and write, user mode process can't access
+0x4B -> Valid, read and executable, user mode process can't access
+
+Store the usyscall struct for every process. Allocated one page for
+this struct. Map it at the USYSCALL address. Unmap this when while
+freeing the process.
+
+

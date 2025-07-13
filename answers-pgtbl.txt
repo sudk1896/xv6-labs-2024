@@ -9,4 +9,28 @@ Store the usyscall struct for every process. Allocated one page for
 this struct. Map it at the USYSCALL address. Unmap this when while
 freeing the process.
 
+uptime is one sys call that can be sped up. The user process  and kernel can share a page and
+kernel can update this page with the ticks and the user process can read it instead of making
+a syscall.
+
+Idea behind printing page table,
+At each level, shift the index (between 0 and 512) by PXSHIFT(level) bits and OR it with the va
+we have seen to get the virtual address of the pte. Every index of a pagetable, forms the top, mid
+or bottom 9 bits of the va. As we traverse the page table, we string these bits together to
+form the virtual address
+
+Idea behind super pages. My plan of attack was like so,
+1. Add superalloc and superfree in kalloc.c. Reserve 20MB of physical memory for super pages, i.e., 10 super pages.
+The tests only allocate 16MB though. 
+2. While creating a super page for the process, 
+  a. Use superalloc to allocate the super page. Decide whether its a super alloc scenario by checking memory requested
+  b. Use a variant of mappages called mapsuperpages, which will only traverse the first two levels of the page table
+     and return the PTE in the 2nd level to which we will asign the PA of the super page in #1.
+  c. This is very similar to the existing mappages implementation and the only thing that changes is the page size.
+3. While forking a process with super pages, we copy the page table using the `mapsuperpages`
+4. While unmapping the page table, we need to remove the leaf nodes of the pagetable (which point to super pages).
+   These will reside the second level of the page table and we can use PTE_LEAF to check. The gotcha is that second
+   level of the page table might have entries that aren't pointing to super pages for e.g. for the code or data pages
+   or any memory which was part of the process before it asked for super pages. 
+
 

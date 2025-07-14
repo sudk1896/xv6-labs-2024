@@ -31,6 +31,8 @@ The tests only allocate 16MB though.
 4. While unmapping the page table, we need to remove the leaf nodes of the pagetable (which point to super pages).
    These will reside the second level of the page table and we can use PTE_LEAF to check. The gotcha is that second
    level of the page table might have entries that aren't pointing to super pages for e.g. for the code or data pages
-   or any memory which was part of the process before it asked for super pages. 
+   or any memory which was part of the process before it asked for super pages.
+5. If its a super page scenario, the L-1 page table will have both Leaf PTEs(mapped to super pages) and non-leaf PTEs
+for regular pages. We must handle this. 
 
 

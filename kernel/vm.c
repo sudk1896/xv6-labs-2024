@@ -269,13 +269,21 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       if (!isSuperPg)
       	panic("uvmunmap: not a leaf");
     }
-    if(do_free & PTE_LEAF(*pte)){
+    if(do_free){
       uint64 pa = PTE2PA(*pte);
-      if (isSuperPg) superfree((void*)pa);
+      /*if (isSuperPg)
+        printf("pte: %p pa %p\n", (void*)*pte, (void*)pa);
+      */
+      if (isSuperPg && PTE_LEAF(*pte)) superfree((void*)pa);
       else kfree((void*)pa);
     }
     *pte = 0;
   }
+  /*
+  if (isSuperPg){
+  printf("After unmapping\n");
+  vmprint_level(pagetable, 2, 0);
+  }*/
 }
 
 // create an empty user page table.
@@ -480,13 +488,13 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
      }
     }
   }
-  /* 
+   
   if (superpg){
     //printf("old pagetable\n");
-    vmprint_level(old, 2, 0);
+    //vmprint_level(old, 2, 0);
     printf("new pagetable\n");
     vmprint_level(new, 2, 0);
-  }*/
+  }
   return 0;
 
  err:

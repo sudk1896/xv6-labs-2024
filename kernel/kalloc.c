@@ -23,14 +23,15 @@ struct {
   struct run *freelist;
 } kmem;
 
-int bitmap[32000];
-int NPAGES = 32000;
+int bitmap[32703];
+int NPAGES = 32703;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  for(int i=0;i<NPAGES;i++) bitmap[i] = 0;
+  //for(int i=0;i<NPAGES;i++) bitmap[i] = 0;
+  freerange((void*)end, (void*)PHYSTOP);
 }
 
 void
@@ -38,13 +39,17 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  int cnt = 0;
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+    bitmap[cnt] = 0;
+    ++cnt; 
+  }
+  printf("Free pages: %d\n", cnt);
 }
 
 int get_bitmap_index(void* pa){
   uint64 end_addr = (uint64)pa;
-  return ((end_addr - PGROUNDUP((uint64)end))/PGSIZE);
+  return ((PGROUNDUP(end_addr) - PGROUNDUP((uint64)end))/PGSIZE);
 }
 
 void
@@ -58,7 +63,7 @@ superfree(void *pa){
     bitmap[st_index+i]=0;
   }
   memset(pa, 1, SUPERPGSIZE);
-  printf("Superfree called\n");
+  //printf("Superfree called\n");
   release(&kmem.lock);
 }
 
@@ -72,7 +77,7 @@ void* superalloc(void){
   int pg_index = -1;
   int f = 0;
   uint64 ret_addr = 0;
-  for(;st <= r && st < (uint64)PHYSTOP; st += SUPERPGSIZE){
+  for(;st <= SUPERPGROUNDUP(r - 512*PGSIZE); st += SUPERPGSIZE){
     int idx = get_bitmap_index((void*)st);
     int found = 1;
     for(int j = 0; j < 512; j++){
@@ -97,7 +102,7 @@ void* superalloc(void){
       bitmap[pg_index+i]=1;
     }
     memset((void*)ret_addr, 1, SUPERPGSIZE);
-    printf("superalloc called\n");
+    //printf("superalloc called\n");
   }
 
   release(&kmem.lock);
@@ -119,6 +124,7 @@ kfree(void *pa)
   memset(pa, 1, PGSIZE); 
   int idx = get_bitmap_index(pa);
   bitmap[idx] = 0;
+  //printf("Deallocated index: %d\n", idx);
   release(&kmem.lock);
 }
 
@@ -133,7 +139,8 @@ kalloc(void)
   for(int i = 0;i<NPAGES;i++){
     if (!bitmap[i]){
       bitmap[i] = 1;
-      r = (void*)(PGROUNDUP((uint64)end) + i*PGSIZE);
+      r = (void*)(PGROUNDUP((uint64)end + i*PGSIZE));
+      //printf("allocated index: %d\n", i);
       break;
     }
   }

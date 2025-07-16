@@ -153,7 +153,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
   printf("process id %d free mem before %d\n", p->pid, count_free_pages());
-  vmprint(p->pagetable);
+  //vmprint(p->pagetable);
   return p;
 }
 
@@ -163,11 +163,18 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  //printf("freeproc\n");
+  //vmprint(p->pagetable);
   if(p->trapframe)
     kfree((void*)p->trapframe);
+  if (p->usyscall)
+    kfree((void*)p->usyscall);
   p->trapframe = 0;
+  p->usyscall = 0;
   if(p->pagetable){
     proc_freepagetable(p->pagetable, p->sz);
+    printf("Process %d freemem after exit %d\n", p->pid, count_free_pages());
+    //vmprint(p->pagetable);
   }
   p->pagetable = 0;
   p->sz = 0;
@@ -396,8 +403,6 @@ exit(int status)
 
   release(&wait_lock);
   
-  printf("Process %d freemem after exit %d\n", p->pid, count_free_pages());
-  vmprint(p->pagetable);
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");

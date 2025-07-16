@@ -277,7 +277,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
         printf("pte: %p pa %p\n", (void*)*pte, (void*)pa);
       */
       if (isSuperPg && PTE_LEAF(*pte)) superfree((void*)pa);
-      else kfree((void*)pa);
+      else {
+	 //printf("Freeing va %ld pte %p pa %p\n",a, (void*)*pte, (void*)pa);
+	 kfree((void*)pa);
+       }
     }
     *pte = 0;
   }
@@ -332,6 +335,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   //vmprint_level(pagetable, 2, 0);
 
   int isMegaPage = (newsz - oldsz >= SUPERPGSIZE);
+  if (isMegaPage) printf("This is a super page req\n");
   oldsz = (isMegaPage == 1 ? SUPERPGROUNDUP(oldsz) : PGROUNDUP(oldsz));
   newsz = (isMegaPage == 1 ? SUPERPGROUNDUP(newsz) : PGROUNDUP(newsz));
   for(a = oldsz; a < newsz; a += sz){

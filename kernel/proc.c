@@ -152,7 +152,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  printf("process id %d free mem before %d\n", p->pid, count_free_pages());
   return p;
 }
 
@@ -165,8 +165,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable){
     proc_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -393,7 +394,8 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&wait_lock);
-
+  
+  printf("Process %d freemem after exit %d\n", p->pid, count_free_pages());
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");

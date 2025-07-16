@@ -69,6 +69,8 @@ void            kfree(void *);
 void            kinit(void);
 void*		superalloc(void);
 void		superfree(void *);
+int 		get_bitmap_index(void*);
+int		count_free_pages();
 
 // log.c
 void            initlog(int, struct superblock*);

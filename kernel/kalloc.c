@@ -23,21 +23,14 @@ struct {
   struct run *freelist;
 } kmem;
 
-struct {
-  struct spinlock lock;
-  struct run *freelist;
-} super_kmem;
+int bitmap[32000];
+int NPAGES = 32000;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  initlock(&super_kmem.lock, "super_kmem");
-  freerange(end, (void*)(PHYSTOP - 10*SUPERPGSIZE));
-  
-  char* p = (char*)SUPERPGROUNDUP((uint64)(PHYSTOP - 10*SUPERPGSIZE));
-  for(;p + SUPERPGSIZE <= (char*)PHYSTOP; p += SUPERPGSIZE)
-      superfree((void*)p);
+  for(int i=0;i<NPAGES;i++) bitmap[i] = 0;
 }
 
 void
@@ -49,33 +42,66 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
-void
-superfree(void *pa){
-  struct run *r;
-
-  if(((uint64)pa % SUPERPGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
-    panic("kfree");
-
-  memset(pa, 1, SUPERPGSIZE);
-  r = (struct run*)pa;
-  acquire(&super_kmem.lock);
-  r->next = super_kmem.freelist;
-  super_kmem.freelist = r;
-  release(&super_kmem.lock);
+int get_bitmap_index(void* pa){
+  uint64 end_addr = (uint64)pa;
+  return ((end_addr - PGROUNDUP((uint64)end))/PGSIZE);
 }
 
+void
+superfree(void *pa){
+  if(((uint64)pa % SUPERPGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("superfree");
+  
+  acquire(&kmem.lock);  
+  int st_index = get_bitmap_index(pa);
+  for(int i=0;i<512;i++){
+    bitmap[st_index+i]=0;
+  }
+  memset(pa, 1, SUPERPGSIZE);
+  printf("Superfree called\n");
+  release(&kmem.lock);
+}
+
+// returns SUPERPGSIZE aligned superpage
 void* superalloc(void){
-  struct run *r;
+  uint64 l = (uint64)SUPERPGROUNDUP((uint64)end);
+  uint64 r = (uint64)SUPERPGROUNDUP((uint64)PHYSTOP);
+  
+  acquire(&kmem.lock); 
+  uint64 st = l;
+  int pg_index = -1;
+  int f = 0;
+  uint64 ret_addr = 0;
+  for(;st <= r && st < (uint64)PHYSTOP; st += SUPERPGSIZE){
+    int idx = get_bitmap_index((void*)st);
+    int found = 1;
+    for(int j = 0; j < 512; j++){
+      if(!bitmap[idx + j]){
+        continue;
+      }else{
+        found = 0;
+	break;
+      }
+    }
 
-  acquire(&super_kmem.lock);
-  r = super_kmem.freelist;
-  if(r)
-    super_kmem.freelist = r->next;
-  release(&super_kmem.lock);
+    if(found){
+      f = 1;
+      pg_index = idx;
+      ret_addr = (uint64)st;
+      break;
+    }
+  }
+  
+  if (f){
+   for(int i=0;i<512;i++){
+      bitmap[pg_index+i]=1;
+    }
+    memset((void*)ret_addr, 1, SUPERPGSIZE);
+    printf("superalloc called\n");
+  }
 
-  if(r)
-    memset((char*)r, 5, SUPERPGSIZE); // fill with junk
-  return (void*)r;
+  release(&kmem.lock);
+  return (void*)ret_addr;
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -85,19 +111,14 @@ void* superalloc(void){
 void
 kfree(void *pa)
 {
-  struct run *r;
-
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+  memset(pa, 1, PGSIZE); 
+  int idx = get_bitmap_index(pa);
+  bitmap[idx] = 0;
   release(&kmem.lock);
 }
 
@@ -107,15 +128,25 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-  struct run *r;
-
   acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
+  void* r = 0;
+  for(int i = 0;i<NPAGES;i++){
+    if (!bitmap[i]){
+      bitmap[i] = 1;
+      r = (void*)(PGROUNDUP((uint64)end) + i*PGSIZE);
+      break;
+    }
+  }
   release(&kmem.lock);
-
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+int count_free_pages(){
+  int cnt = 0;
+  acquire(&kmem.lock);
+  for(int i=0;i<NPAGES;i++){
+    if (!bitmap[i]) ++cnt;
+  }
+  release(&kmem.lock);
+  return cnt;
 }

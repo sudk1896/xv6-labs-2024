@@ -153,6 +153,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
   printf("process id %d free mem before %d\n", p->pid, count_free_pages());
+  vmprint(p->pagetable);
   return p;
 }
 
@@ -396,6 +397,7 @@ exit(int status)
   release(&wait_lock);
   
   printf("Process %d freemem after exit %d\n", p->pid, count_free_pages());
+  vmprint(p->pagetable);
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");

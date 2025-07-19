@@ -104,4 +104,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int ticks;                   // Number of ticks after which handler function must be called
+  void* handler;               // The virtual address of the handler function to be called
+  int ticks_passed;            // Ticks passed
 };

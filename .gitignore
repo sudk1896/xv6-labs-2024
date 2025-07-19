@@ -5,6 +5,8 @@ _*
 *.asm
 *.sym
 *.img
+*.swo
+*.swp
 vectors.S
 bootblock
 entryother

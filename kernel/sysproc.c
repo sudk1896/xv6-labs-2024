@@ -92,3 +92,23 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigreturn(void)
+{
+  return 0;
+}
+
+uint64
+sys_sigalarm(void)
+{
+  struct proc* cur = myproc();
+  int ticks;
+  argint(0, &ticks);
+  cur->ticks = ticks;
+  uint64 addr;
+  argaddr(1, &addr);
+  printf("Fp: %p\n", (void*)addr);
+  cur->handler = (void*)addr;
+  return 0;
+}

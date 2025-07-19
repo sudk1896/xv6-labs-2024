@@ -1,0 +1,6 @@
+a2 register holds 13
+f is at 0xe and 0x0
+printf is at 0x6b0
+ra will have 0x34, the instruction right after jal (0x30)
+
+For backtrace, its just address math.

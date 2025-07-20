@@ -4,3 +4,41 @@ printf is at 0x6b0
 ra will have 0x34, the instruction right after jal (0x30)
 
 For backtrace, its just address math.
+
+test0
+Fairly straightforward. Add the glue code to invoke sigalarm and sigreturn.
+In sigalarm, store the virtual address of the alarm handler in the process.
+This virtual address is a function pointer. In usertrap(), set the epc
+to this function pointer after the ticks have passed
+
+test1/test2/test3
+True to what the authors say, the code was very few lines but it took a while
+for me to finish this one.
+The uber idea is to save the trapframe contents of a process into a separate page
+before the handler runs and restore it after the handler has finished. This is done
+in sigreturn. Also, sigreturn overwrites the a0 register so skip doing that only
+for this syscall.
+
+My initial misguided solution was to declare a page for saving the trapframe contents
+and map it in user space. Then use the copyin and copyout methods to read from and 
+write to this new PAGE. This mistake here was that no user mapping is required for
+this page. Reading from and writing to this page happens entirely in the kernel
+and the user space process doesn't have to be aware of it at all. Also, TRAPFRAME
+page is not accessible to userspace (PTE_U = 0) so copyin and copyout for TRAPFRAME
+will not work as the userspace cannot R/W to this (obviously!). To come to this conclusion,
+I spent a few hours printing the trapframe contents before the handler is run in trap.c
+and then in sigreturn when the trapframe contents are restored from the saved alarm page.
+I realised that the contents weren't matching. That's when I concluded that userspace (via walkaddr)
+cannot read the TRAPFRAME contents. walkaddr is what copyin/copyout use eventually.
+Instead, we just need the much simpler memmove to copy in and out as all of this is happening
+in kernel space only.
+
+This was how I debugged, 
+p1 -> running,
+n ticks have passed,
+save p1->trapframe in the new page
+run the handler,
+handler calls sigreturn
+sigreturn restores the trapframe from the new trapframe page
+ 
+.

@@ -107,4 +107,6 @@ struct proc {
   int ticks;                   // Number of ticks after which handler function must be called
   void* handler;               // The virtual address of the handler function to be called
   int ticks_passed;            // Ticks passed
+  int handler_running;         // Is the handler running right now ?
+  struct trapframe* alarm_page;// Data page for storing trap frame used by alarm handler
 };

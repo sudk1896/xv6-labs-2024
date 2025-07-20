@@ -96,6 +96,11 @@ sys_uptime(void)
 uint64
 sys_sigreturn(void)
 {
+  struct proc* p = myproc();
+  memmove((void*)p->trapframe, (void*)p->alarm_page, PGSIZE);
+  //printf("epc: %p ra %p sp %p", (void*)p->trapframe->epc, (void*)p->trapframe->ra, (void*)p->trapframe->sp); 
+  p->ticks_passed = 0;
+  p->handler_running = 0;
   return 0;
 }
 
@@ -108,7 +113,6 @@ sys_sigalarm(void)
   cur->ticks = ticks;
   uint64 addr;
   argaddr(1, &addr);
-  printf("Fp: %p\n", (void*)addr);
   cur->handler = (void*)addr;
   return 0;
 }

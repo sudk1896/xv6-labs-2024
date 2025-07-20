@@ -66,11 +66,20 @@ usertrap(void)
 
     syscall();
   } else if((which_dev = devintr()) != 0){
-    if(which_dev == 2 && p->ticks > 0 && p->ticks_passed == p->ticks){
-      p->ticks_passed = 0;
+    if(which_dev == 2 && p->ticks > 0 && p->ticks_passed == p->ticks && p->handler_running==0){
+      p->handler_running = 1;
+      /*printf("trapframe pre switch\n");
+      print_trapframe(p);*/
+      if(p->alarm_page == 0){
+	char *mem = kalloc();
+        if(mem==0) panic("Unable to get a page for alarm handler\n");
+	memset(mem, 0, PGSIZE);
+	memmove((void*)mem, (void*)p->trapframe, PGSIZE);
+	p->alarm_page = (struct trapframe*)mem;
+      } else memmove((void*)p->alarm_page, (void*)p->trapframe, PGSIZE);
       p->trapframe->epc = (uint64)p->handler;
       //usertrapret();
-    } else if (p->ticks > 0) ++(p->ticks_passed); 
+    } else if (p->ticks > 0 && p->handler_running==0) ++(p->ticks_passed); 
     // ok
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);

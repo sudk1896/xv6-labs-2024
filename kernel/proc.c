@@ -148,6 +148,8 @@ found:
   p->ticks = 0;
   p->ticks_passed = 0;
   p->handler = (void*)-1;
+  p->handler_running = 0;
+  p->alarm_page = 0;
   return p;
 }
 
@@ -160,6 +162,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->alarm_page){
+    kfree((void*)p->alarm_page); 
+  }
+    
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -171,6 +177,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->ticks = 0;
+  p->ticks_passed = 0;
+  p->alarm_page = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -507,6 +516,10 @@ sched(void)
   intena = mycpu()->intena;
   swtch(&p->context, &mycpu()->context);
   mycpu()->intena = intena;
+}
+
+void print_trapframe(struct proc* p){
+ printf("%p %p %p\n", (void*)p->trapframe->epc, (void*)p->trapframe->ra, (void*)p->trapframe->sp); 
 }
 
 // Give up the CPU for one scheduling round.

@@ -387,20 +387,21 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       if(CHECKBIT(flags, 8)){
 	uint64 pa = PTE2PA(*pte);
        	int refcount = get_refcount((void*)pa);
-        printf("copyout dealing with COW page %p %d\n", (void*)pa, refcount);
+        //printf("copyout dealing with COW page %p %d\n", (void*)pa, refcount);
 	if(refcount==1){
 	  flags = (flags & ~(PTE_RSW));
 	  flags = (flags | PTE_W);
 	  *pte = (PA2PTE(pa) | flags);
 	} else {
 	  char* mem = (char*)kalloc();
+	  if(mem==0) return -1;
 	  memmove((void*)mem, (char*)pa, PGSIZE);
 	  flags = (flags & ~(PTE_RSW));
 	  flags = (flags | PTE_W);
 	  *pte = (PA2PTE((uint64)mem) | flags);
 	  change_page_index((void*)pa, 0); 
 	}
-      }
+      }else return -1;
     }
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);

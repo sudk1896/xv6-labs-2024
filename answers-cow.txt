@@ -1,0 +1,19 @@
+I spent about ~3 days trying to get the simpletest working and was finally able to do it.
+Note, this lab is hard to do incrementally. The MVP to get simpletest passing took quite some
+thinking and debugging.
+The issue I was frequently running into was this, lets say we have Parent process P and child process C.
+C is created from forking P. While C exited it was freeing P's pages. This happened in a chain, wherein
+the cowtest process would exit and free memory, but it would free pages need by sh, which would then
+free pages needed by the init process. The scause register had 0xc and 2 as values in the exception
+which made me suspect that I was somehow freeing the code segment which would be read-only.
+I was in the woods trying a lot of options but none of them worked. 
+There were multiple things that could go wrong like maybe my ref counting approach was wrong etc.
+I then got the ingenious idea (after a literal walk in the park), why don't I print the pagetable
+of the parent before forking and the child after forking and track the ref counts of all the physical
+pages. The refcounts of all the physical pages must be 1 greater than the parent's physical pages
+before forking. And et voila, that was indeed the bug. While forking the process, I wasn't maintaining
+the refcount of the Read-only pages. On forking, the refcount for a Read only page will be incremented
+by 1. I fixed that and then simpletest passed. This was a simple 2-line change which took me 3 days to debug.
+
+When I ran usertests -q, some tests were failing but this was more of an exercise in handling
+all edge cases. Now, all usertests pass.

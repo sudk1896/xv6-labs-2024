@@ -67,33 +67,55 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 15){
+  }
+  else if (r_scause() == 13){
+    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    setkilled(p);
+  } 
+  else if(r_scause() == 15){
     /*vmprint(p->pagetable);
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());*/
     uint64 fault_addr = r_stval();
-    pte_t *pte = walk(p->pagetable, fault_addr, 0); 
+    if(fault_addr >= MAXVA){
+      setkilled(p);
+    }
+    else{
+    pte_t *pte = walk(p->pagetable, fault_addr, 0);
+    if(pte == 0){
+      setkilled(p);
+    }else{
     uint flags = PTE_FLAGS(*pte);
-    if(CHECKBIT(flags, 8)){ // COW page 
+    if(CHECKBIT(flags, 4)==0){
+      //kill a process if tries to access a page it doesn't have access to
+      // checks if PTE_U bit is unset
+      setkilled(p);
+    }else if(CHECKBIT(flags, 8)){ // COW page 
       uint64 pa = PTE2PA(*pte);
       int refcount = get_refcount((void*)pa);
       if(refcount == 1){
-        flags = (flags & ~(PTE_RSW));
+	flags = (flags & ~(PTE_RSW));
 	flags = (flags | PTE_W);
 	*pte = (PA2PTE(pa) | flags);
+       }else {
+	 char* mem = (char*)kalloc();
+	 if(mem==0){
+	   printf("OOM, can't allocate more pages\n");
+	   setkilled(p);
+	 }
+	 memmove((void*)mem, (char*)pa, PGSIZE);
+	 flags = (flags & ~(PTE_RSW));
+	 flags = (flags | PTE_W);
+	 *pte = (PA2PTE((uint64)mem) | flags);
+	 change_page_index((void*)pa, 0);
+	}
+
+	 sfence_vma(); 
+	} else setkilled(p);
       }
-      else {
-	char* mem = (char*)kalloc();
-        memmove((void*)mem, (char*)pa, PGSIZE);
-        flags = (flags & ~(PTE_RSW));
-	flags = (flags | PTE_W);
-	*pte = (PA2PTE((uint64)mem) | flags);
-	change_page_index((void*)pa, 0);
-      }
-      
-      sfence_vma(); 
      }
-  }
+    }
     else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());

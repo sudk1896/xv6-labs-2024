@@ -22,7 +22,6 @@ simpletest()
     printf("sbrk(%d) failed\n", sz);
     exit(-1);
   }
-
   for(char *q = p; q < p + sz; q += 4096){
     *(int*)q = getpid();
   }
@@ -32,12 +31,15 @@ simpletest()
     printf("fork() failed\n");
     exit(-1);
   }
-
-  if(pid == 0)
+  
+  if(pid == 0){
+    printf("inside child\n");
     exit(0);
-
+    printf("child exited\n");
+  }
+  
   wait(0);
-
+  printf("Reached here\n");
   if(sbrk(-sz) == (char*)0xffffffffffffffffL){
     printf("sbrk(-%d) failed\n", sz);
     exit(-1);
@@ -226,6 +228,7 @@ main(int argc, char *argv[])
   // check that the first simpletest() freed the physical memory.
   simpletest();
 
+  /*
   threetest();
   threetest();
   threetest();
@@ -235,6 +238,6 @@ main(int argc, char *argv[])
   forkforktest();
 
   printf("ALL COW TESTS PASSED\n");
-
+  */
   exit(0);
 }

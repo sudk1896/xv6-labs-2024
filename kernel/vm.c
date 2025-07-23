@@ -192,6 +192,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
+      //printf("pa %p idx %d refcount %d\n", (void*)pa, page_index((void*)pa), get_refcount((void*)pa));
       kfree((void*)pa);
     }
     *pte = 0;
@@ -315,8 +316,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
-
+  //printf("refcount before\n");
+  //refcount_state();
+  //printf("parent before\n");
+  //vmprint(old);
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
@@ -324,14 +327,23 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    if(CHECKBIT(flags, 2)){
+      flags = (flags & ~(PTE_W));
+      flags = (flags | PTE_RSW);// mark as a COW page
+      *pte = (PA2PTE(pa) | flags);
+      change_page_index((void*)pa, 1);//incr page ref count
+     } else if(CHECKBIT(flags, 1)){
+       change_page_index((void*)pa, 1);
+     }
+    
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       goto err;
     }
   }
+  //printf("refcount after\n");
+  //refcount_state();
+  //printf("child after\n");
+  //vmprint(new);
   return 0;
 
  err:
@@ -366,9 +378,30 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
-      return -1;
+    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0){
+            return -1;
+    }
+    //printf("addr %p flags %lx\n", (void*)PTE2PA(*pte), PTE_FLAGS(*pte));
+    if ((*pte & PTE_W) == 0){
+      uint flags = PTE_FLAGS(*pte);
+      if(CHECKBIT(flags, 8)){
+	uint64 pa = PTE2PA(*pte);
+       	int refcount = get_refcount((void*)pa);
+        printf("copyout dealing with COW page %p %d\n", (void*)pa, refcount);
+	if(refcount==1){
+	  flags = (flags & ~(PTE_RSW));
+	  flags = (flags | PTE_W);
+	  *pte = (PA2PTE(pa) | flags);
+	} else {
+	  char* mem = (char*)kalloc();
+	  memmove((void*)mem, (char*)pa, PGSIZE);
+	  flags = (flags & ~(PTE_RSW));
+	  flags = (flags | PTE_W);
+	  *pte = (PA2PTE((uint64)mem) | flags);
+	  change_page_index((void*)pa, 0); 
+	}
+      }
+    }
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
@@ -448,4 +481,28 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void vmprint_level(pagetable_t pagetable, int level, uint64 va){
+  if (level < 0) return;
+
+  for (int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if (((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) || PTE_LEAF(pte)){
+        if (level == 2) printf("..");
+	else if (level == 1) printf(".. ..");
+	else printf(".. .. ..");
+	uint64 vaddr = (va | (i<<PXSHIFT(level)));
+	printf("%p: pte %p pa %p refcount %d flags %lx\n",(void*)vaddr, (void*)pte, (void*)PTE2PA(pte),get_refcount((void*)PTE2PA(pte)), PTE_FLAGS(pte));
+	uint64 child = PTE2PA(pte);
+	vmprint_level((pagetable_t)child, level - 1, vaddr);
+    }
+  }
+}
+
+void
+vmprint(pagetable_t pagetable) {
+  // your code here
+  printf("page table %p\n", (void*)pagetable);
+  vmprint_level(pagetable, 2, 0);
 }

@@ -173,6 +173,11 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void		vmprint(pagetable_t);
+void 		change_page_index(void*, int);
+void 	        refcount_state(void);
+int	  	get_refcount(void*);
+int		page_index(void*);
 
 // plic.c
 void            plicinit(void);

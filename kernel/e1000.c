@@ -100,8 +100,23 @@ e1000_transmit(char *buf, int len)
   // buf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after send completes.
-  //
-
+  acquire(&e1000_lock);
+  int ring_idx = regs[E1000_TDT];
+  if((tx_ring[ring_idx].status & E1000_TXD_STAT_DD)!=0){
+    // data has not yet been sent by E1000
+    release(&e1000_lock);
+    return -1;
+  }
+  else{
+    kfree((void*)tx_ring[ring_idx].addr);
+    tx_ring[ring_idx].addr = (uint64)buf;
+    tx_ring[ring_idx].length = len;
+    tx_ring[ring_idx].status = 0;
+    tx_ring[ring_idx].status = (1<<4); //set RSV bit
+    tx_ring[ring_idx].status |= (1<<3); //set RS bit
+    regs[E1000_TDT] = (regs[E1000_TDT] + 1)%TX_RING_SIZE; 
+  }
+  release(&e1000_lock);  
   
   return 0;
 }

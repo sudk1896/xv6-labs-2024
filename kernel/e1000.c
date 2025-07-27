@@ -18,7 +18,7 @@ static char *rx_bufs[RX_RING_SIZE];
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
-struct spinlock e1000_lock;
+struct spinlock e1000_lock, e1000_tx_lock, e1000_rx_lock;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -29,6 +29,8 @@ e1000_init(uint32 *xregs)
   int i;
 
   initlock(&e1000_lock, "e1000");
+  initlock(&e1000_tx_lock, "e1000_tx_lock");
+  initlock(&e1000_rx_lock, "e1000_rx_lock");
 
   regs = xregs;
 
@@ -100,11 +102,11 @@ e1000_transmit(char *buf, int len)
   // buf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after send completes.
-  acquire(&e1000_lock);
+  acquire(&e1000_tx_lock);
   int ring_idx = regs[E1000_TDT];
   if((tx_ring[ring_idx].status & E1000_TXD_STAT_DD)==0){
     // data has not yet been sent by E1000
-    release(&e1000_lock);
+    release(&e1000_tx_lock);
     return -1;
   }
   else{
@@ -116,10 +118,10 @@ e1000_transmit(char *buf, int len)
     tx_ring[ring_idx].cmd = 0;
     tx_ring[ring_idx].cmd |= (1<<4); //set RSV bit
     tx_ring[ring_idx].cmd |= (1<<3); //set RS bit
-    tx_ring[ring_idx].cmd |= (1<<0);
+    tx_ring[ring_idx].cmd |= (1<<0); //set EOP bit (End of packet)
     regs[E1000_TDT] = (regs[E1000_TDT] + 1)%TX_RING_SIZE; 
   }
-  release(&e1000_lock);  
+  release(&e1000_tx_lock);  
   
   return 0;
 }
@@ -132,8 +134,25 @@ e1000_recv(void)
   //
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
-  //
-
+  acquire(&e1000_rx_lock);
+  int ring_idx = (regs[E1000_RDT] + 1)%RX_RING_SIZE;
+  if((rx_ring[ring_idx].status & E1000_RXD_STAT_DD)==0){
+    // no packet is waiting to be DMA'd to memory so stop
+    release(&e1000_rx_lock);
+    return;
+  }
+  else{
+    printf("net rx called\n");
+    struct rx_desc packet = rx_ring[ring_idx];
+    net_rx((char*)packet.addr, packet.length);
+    rx_bufs[ring_idx] = kalloc();
+    if(!rx_bufs[ring_idx])
+	    panic("e1000, OOM no more memory");
+    rx_ring[ring_idx].addr = (uint64)rx_bufs[ring_idx];
+    rx_ring[ring_idx].status = 0;
+    regs[E1000_RDT] = ring_idx;
+  }
+  release(&e1000_rx_lock);
 }
 
 void

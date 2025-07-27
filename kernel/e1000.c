@@ -135,22 +135,22 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
   acquire(&e1000_rx_lock);
-  int ring_idx = (regs[E1000_RDT] + 1)%RX_RING_SIZE;
-  if((rx_ring[ring_idx].status & E1000_RXD_STAT_DD)==0){
-    // no packet is waiting to be DMA'd to memory so stop
-    release(&e1000_rx_lock);
-    return;
-  }
-  else{
-    printf("net rx called\n");
-    struct rx_desc packet = rx_ring[ring_idx];
-    net_rx((char*)packet.addr, packet.length);
-    rx_bufs[ring_idx] = kalloc();
-    if(!rx_bufs[ring_idx])
+  while(1){
+    int ring_idx = (regs[E1000_RDT] + 1)%RX_RING_SIZE;
+    if((rx_ring[ring_idx].status & E1000_RXD_STAT_DD)==0){ 
+      break;
+    }
+    else{
+     //printf("rx called\n");
+     struct rx_desc packet = rx_ring[ring_idx];
+     net_rx((char*)packet.addr, packet.length);
+     rx_bufs[ring_idx] = kalloc();
+     if(!rx_bufs[ring_idx])
 	    panic("e1000, OOM no more memory");
-    rx_ring[ring_idx].addr = (uint64)rx_bufs[ring_idx];
-    rx_ring[ring_idx].status = 0;
-    regs[E1000_RDT] = ring_idx;
+     rx_ring[ring_idx].addr = (uint64)rx_bufs[ring_idx];
+     rx_ring[ring_idx].status = 0;
+     regs[E1000_RDT] = ring_idx;
+    }
   }
   release(&e1000_rx_lock);
 }

@@ -17,6 +17,7 @@ struct packet_queue{
   char* buf; // UDP payload including header
   int len;
   struct packet_queue* next;
+  char* og_frame; // Pointer to original
 };
 
 struct packet_queue* udp_queue[(1<<16)];
@@ -33,7 +34,7 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 static struct spinlock udplock;
-int chan;
+int write_chan;
 
 void
 netinit(void)
@@ -46,7 +47,7 @@ netinit(void)
   for(int i=0;i<PORTS;i++){ 
     pkt_count[i] = 0; 
   }
-  chan = 0;
+  write_chan = 0;
 }
 
 
@@ -72,7 +73,7 @@ sys_bind(void)
   return 0;
 }
 
-int add_packet(int port, char* buf, uint32 ip_src, int len){ 
+int add_packet(int port, char* buf, char* og_frame, uint32 ip_src, int len){ 
   if(pkt_count[port]==16){ 
     kfree((void*)buf);
     printf("Port %d packet queue is full, dropping pkt\n", port);
@@ -83,6 +84,7 @@ int add_packet(int port, char* buf, uint32 ip_src, int len){
   pq->len = len;
   pq->next = 0;
   pq->ip_src = ip_src;
+  pq->og_frame = og_frame;
   ++pkt_count[port];
   if(udp_queue[port]==0){ 
     head[port] = pq;
@@ -92,7 +94,7 @@ int add_packet(int port, char* buf, uint32 ip_src, int len){
     udp_queue[port]->next = pq;
   }
   udp_queue[port] = pq;
-  printf("Added packet to port %d Pck count %d \n", port, pkt_count[port]);
+  //printf("Added packet to port %d Pck count %d \n", port, pkt_count[port]);
   return 0;
 }
 
@@ -158,31 +160,30 @@ sys_recv(void)
   
   acquire(&udplock);
   while(pkt_count[dport]==0){
-    printf("Sleeping, no packets\n");
-    sleep(&chan, &udplock);
+    //printf("Sleeping, no packets\n");
+    sleep(&write_chan, &udplock);
   }
   
-  printf("Processing a packet\n"); 
+  //printf("Processing a packet\n"); 
   struct packet_queue* pkt = remove_packet(dport);
   struct udp* udp = (struct udp*)pkt->buf;
   struct proc* p = myproc();
   //uint64 port = (uint64)udp->sport; 
-  printf("Recv IP: %x\n",pkt->ip_src);
+  //printf("Recv IP: %x\n",pkt->ip_src);
   int ip_bytes = copyout(p->pagetable, src, (char*)(&pkt->ip_src), sizeof(pkt->ip_src));
-  printf("IP butes copied %d\n", ip_bytes);
+  //printf("IP butes copied %d\n", ip_bytes);
   int port_bytes = copyout(p->pagetable, sport, (char*)(&udp->sport), sizeof(udp->sport));
-  printf("Port num %d port bytes copied %d\n", udp->sport, port_bytes);
+  //printf("Port num %d port bytes copied %d\n", udp->sport, port_bytes);
   char* udp_payload = (char*)(udp + 1);
-  printf("UDP payload: %s\n", udp_payload);
+  //printf("UDP payload: %s\n", udp_payload);
   int payload_bytes = maxlen < (udp->ulen - sizeof(udp_payload)) ? maxlen : (udp->ulen - sizeof(udp_payload));
-  printf("UDP size w header %d copy bytes %d\n", udp->ulen, payload_bytes);
-  copyout(p->pagetable, buf, udp_payload, payload_bytes);
-  release(&udplock); 
+  //printf("UDP size w header %d copy bytes %d\n", udp->ulen, payload_bytes);
+  copyout(p->pagetable, buf, udp_payload, payload_bytes); 
+  release(&udplock);
+  kfree((void*)pkt->og_frame); 
   kfree((void*)pkt);
   if(payload_bytes < 0 || port_bytes < 0 || ip_bytes < 0) return -1;
   return payload_bytes;
-  
-  return 0;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -298,18 +299,18 @@ ip_rx(char *buf, int len)
   //
   struct eth* eth = (struct eth*)buf;
   struct ip* ip = (struct ip*)(eth + 1);
-  printf("protocol %d\n", ip->ip_p);  
+  //printf("protocol %d\n", ip->ip_p);  
   if(ip->ip_p==IPPROTO_UDP){
     struct udp* udp = (struct udp*)(ip + 1);
     uint16 dport = ntohs(udp->dport); 
     if(udp_procs[dport]>0){
       uint32 ip_src = ntohl(ip->ip_src);
-      printf("Src IP %x\n", ip_src);
+      //printf("Src IP %x\n", ip_src);
       udp->sport = ntohs(udp->sport);
       udp->ulen = ntohs(udp->ulen);
       acquire(&udplock);
-      add_packet(dport, (char*)udp, ip_src, udp->ulen);
-      wakeup(&chan);
+      add_packet(dport, (char*)udp, buf, ip_src, udp->ulen);
+      wakeup(&write_chan);
       release(&udplock);
     }else{
       kfree((void*)buf);

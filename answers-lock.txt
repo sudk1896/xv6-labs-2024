@@ -1,0 +1,14 @@
+The first part of the problem is fairly straight forward. My plan of attack
+was the following, initially allocate the entire 128MB of memory
+on Core 0. The rest of the cores will get their own free lists but initially
+they would all have empty free lists.
+For every kalloc request on a core, we first check if enough memory is 
+available on that core's free list and if not we steal one page
+from any other core. Every core's free list will have a spinlock
+and we must hold the spinlock if we want to modify that free list, either
+by allocating or freeing a page.
+When the kernel boots, Core 0 has all memory and rest of the cores have none.
+As and when processes on other cores ask for mem, we allocate them if required
+from other cores. When we free memory, we free it on the core the process was
+running. To get the current core, we switch off interrupts, get the core id 
+and then switch it on.

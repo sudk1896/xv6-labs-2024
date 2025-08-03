@@ -23,15 +23,44 @@
 #include "fs.h"
 #include "buf.h"
 
+#define HTABLE_SZ 23
+
+struct hash_bucket{
+  struct spinlock lock;
+  struct buf* head;
+};
+
 struct {
   struct spinlock lock;
   struct buf buf[NBUF];
-
-  // Linked list of all buffers, through prev/next.
-  // Sorted by how recently the buffer was used.
-  // head.next is most recent, head.prev is least.
-  struct buf head;
+  struct hash_bucket Q[HTABLE_SZ];
+  // free list of buffers, DLL
+  struct buf* freelist;// head of freelist
 } bcache;
+
+// insert node at the head of freelist
+void insert(struct buf* node, struct buf** freelist){
+  if(node==0) panic("empty node"); 
+  node->prev = 0;
+  node->next = *freelist;
+  
+  if(*freelist)
+    (*freelist)->prev = node;
+  
+  *freelist = node;
+}
+
+
+void print(){
+  int cnt = 0;
+  struct buf* c = bcache.freelist;
+  while(c){
+   ++cnt;
+   c = c->next;
+  }
+
+  printf("Freelist elements: %d\n", cnt);
+}
 
 void
 binit(void)
@@ -40,16 +69,19 @@ binit(void)
 
   initlock(&bcache.lock, "bcache");
 
-  // Create linked list of buffers
-  bcache.head.prev = &bcache.head;
-  bcache.head.next = &bcache.head;
+  // Create linked list of buffers 
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
+    b->refcnt = 0;
+    insert(b, &bcache.freelist); 
     initsleeplock(&b->lock, "buffer");
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
   }
+
+  for(int i=0;i<HTABLE_SZ;i++){
+    bcache.Q[i].head = 0;
+    initlock(&bcache.Q[i].lock, "bcache.bucket");
+  }
+  print();
+  printf("binit done\n");
 }
 
 // Look through buffer cache for block on device dev.
@@ -58,32 +90,42 @@ binit(void)
 static struct buf*
 bget(uint dev, uint blockno)
 {
-  struct buf *b;
-
+  int hash = (dev + blockno)%HTABLE_SZ;
+  //printf("looking for dev %d blockno %d hash %d\n", dev, blockno, hash);
+  // acquire bucket lock to search
   acquire(&bcache.lock);
-
-  // Is the block already cached?
-  for(b = bcache.head.next; b != &bcache.head; b = b->next){
-    if(b->dev == dev && b->blockno == blockno){
-      b->refcnt++;
+  acquire(&bcache.Q[hash].lock); 
+  struct buf* cur = bcache.Q[hash].head;
+  while(cur){
+    if(cur->dev == dev && cur->blockno == blockno){
+      cur->refcnt++;
+      release(&bcache.Q[hash].lock);
       release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
+      acquiresleep(&cur->lock);
+      //printf("Buffer cache has dev %d blkno %d refcnt %d\n", dev, blockno, cur->refcnt);
+      return cur;
     }
+
+    cur = cur->next;
   }
-
-  // Not cached.
-  // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
-      b->dev = dev;
-      b->blockno = blockno;
-      b->valid = 0;
-      b->refcnt = 1;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
+  
+  //printf("Searching for dev %d blkno %d in freelist\n", dev, blockno);
+  // not found in hash bucket, get the head in freelist if there's one
+  cur = bcache.freelist;
+  if(cur){
+    cur->dev = dev;
+    cur->blockno = blockno;
+    cur->valid = 0;
+    cur->refcnt = 1;
+    bcache.freelist = cur->next;
+    if(bcache.freelist)
+     bcache.freelist->prev = 0;
+    insert(cur, &bcache.Q[hash].head); 
+    release(&bcache.Q[hash].lock);
+    release(&bcache.lock);
+    acquiresleep(&cur->lock);
+    //printf("Found a block in freelist for dev %d blockno %d\n", dev, blockno);
+    return cur;
   }
   panic("bget: no buffers");
 }
@@ -111,6 +153,22 @@ bwrite(struct buf *b)
   virtio_disk_rw(b, 1);
 }
 
+// not thread-safe
+void remove(struct buf* node, struct buf** freelist){
+ if(node==0 || freelist==0) panic("corrupted pointers passed to remove\n");
+ if(node->prev == 0)
+   *freelist = node->next;
+ else
+   node->prev->next = node->next;
+
+ if(node->next){
+   node->next->prev = node->prev;
+ }
+
+ node->next = 0;
+ node->prev = 0;
+}
+
 // Release a locked buffer.
 // Move to the head of the most-recently-used list.
 void
@@ -118,22 +176,21 @@ brelse(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("brelse");
-
+  //int d = b->dev;
+  //int blk = b->blockno;
+  //printf("brelse for dev %d blockno %d refcnt %d\n", b->dev, b->blockno, b->refcnt);
   releasesleep(&b->lock);
-
+  int hash = (b->blockno + b->dev)%HTABLE_SZ;
   acquire(&bcache.lock);
+  acquire(&bcache.Q[hash].lock);
   b->refcnt--;
-  if (b->refcnt == 0) {
-    // no one is waiting for it.
-    b->next->prev = b->prev;
-    b->prev->next = b->next;
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
+  if(b->refcnt == 0){
+    remove(b, &bcache.Q[hash].head);
+    insert(b, &bcache.freelist);
   }
-  
+  release(&bcache.Q[hash].lock);
   release(&bcache.lock);
+  //printf("brelse for dev %d blockno %d done!\n", d, blk);
 }
 
 void

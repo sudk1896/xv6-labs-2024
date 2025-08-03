@@ -92,15 +92,13 @@ bget(uint dev, uint blockno)
 {
   int hash = (dev + blockno)%HTABLE_SZ;
   //printf("looking for dev %d blockno %d hash %d\n", dev, blockno, hash);
-  // acquire bucket lock to search
-  acquire(&bcache.lock);
-  acquire(&bcache.Q[hash].lock); 
+  // acquire bucket lock to search 
+  acquire(&bcache.Q[hash].lock);
   struct buf* cur = bcache.Q[hash].head;
   while(cur){
     if(cur->dev == dev && cur->blockno == blockno){
       cur->refcnt++;
       release(&bcache.Q[hash].lock);
-      release(&bcache.lock);
       acquiresleep(&cur->lock);
       //printf("Buffer cache has dev %d blkno %d refcnt %d\n", dev, blockno, cur->refcnt);
       return cur;
@@ -111,6 +109,7 @@ bget(uint dev, uint blockno)
   
   //printf("Searching for dev %d blkno %d in freelist\n", dev, blockno);
   // not found in hash bucket, get the head in freelist if there's one
+  acquire(&bcache.lock);
   cur = bcache.freelist;
   if(cur){
     cur->dev = dev;
@@ -120,9 +119,9 @@ bget(uint dev, uint blockno)
     bcache.freelist = cur->next;
     if(bcache.freelist)
      bcache.freelist->prev = 0;
-    insert(cur, &bcache.Q[hash].head); 
-    release(&bcache.Q[hash].lock);
     release(&bcache.lock);
+    insert(cur, &bcache.Q[hash].head);
+    release(&bcache.Q[hash].lock);
     acquiresleep(&cur->lock);
     //printf("Found a block in freelist for dev %d blockno %d\n", dev, blockno);
     return cur;
@@ -181,15 +180,16 @@ brelse(struct buf *b)
   //printf("brelse for dev %d blockno %d refcnt %d\n", b->dev, b->blockno, b->refcnt);
   releasesleep(&b->lock);
   int hash = (b->blockno + b->dev)%HTABLE_SZ;
-  acquire(&bcache.lock);
   acquire(&bcache.Q[hash].lock);
   b->refcnt--;
   if(b->refcnt == 0){
     remove(b, &bcache.Q[hash].head);
+    release(&bcache.Q[hash].lock);
+    acquire(&bcache.lock);
     insert(b, &bcache.freelist);
+    release(&bcache.lock);
   }
-  release(&bcache.Q[hash].lock);
-  release(&bcache.lock);
+  else release(&bcache.Q[hash].lock);
   //printf("brelse for dev %d blockno %d done!\n", d, blk);
 }
 

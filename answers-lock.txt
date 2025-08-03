@@ -12,3 +12,15 @@ As and when processes on other cores ask for mem, we allocate them if required
 from other cores. When we free memory, we free it on the core the process was
 running. To get the current core, we switch off interrupts, get the core id 
 and then switch it on.
+For part 2, the difficulty was managing pointers. I made a silly mistake in
+removing a node from the hash queue. First, I kept the global bcache lock and then
+removed it in the next iteration. The algorithm is simple,
+1. On initialisation, keep all the buffers in the free list
+2. Create a hash table of size 23 (any prime number is OK) and set the hash queue to be empty initially
+3. On a bget request, hold the per-hash queue lock and search for the device and blkno
+4. If its found in the hash queue, return it if not, we must search in the freelist for which we 
+have to hold the bcache.lock.
+5. In brelse, if the refcnt drops to 0 for a block, remove it from the hash queue
+by holding and releasing the hash Q lock. Then hold the bcache lock and insert this freed node
+into the free list in bcache.
+6. The lock order is always acq(hash_Q.lock)->acquire(bcache.lock)

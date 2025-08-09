@@ -295,8 +295,10 @@ ilock(struct inode *ip)
   struct buf *bp;
   struct dinode *dip;
 
-  if(ip == 0 || ip->ref < 1)
+  if(ip == 0 || ip->ref < 1){
+    printf("ip %p ref %d\n", (void*)ip, ip->ref);
     panic("ilock");
+  }
 
   acquiresleep(&ip->lock);
 
@@ -596,6 +598,49 @@ int
 namecmp(const char *s, const char *t)
 {
   return strncmp(s, t, DIRSIZ);
+}
+
+// must be called from inside a txn
+struct inode*
+follow_symlink(struct inode* ip, int depth){
+  if(depth >= 10){
+    if(ip){
+     printf("inode ptr %p depth %d\n", (void*)ip, depth);
+     iput(ip);
+    }
+    return 0;
+  }
+
+  if(ip==0) return 0;
+
+  if(ip->type != T_SYMLINK){
+    return ip;
+  }
+
+  ilock(ip);
+  char path[MAXPATH];
+  memset(path, 0, sizeof(path));
+  int n = readi(ip, 0, (uint64)path, 0, (ip->size < MAXPATH - 1 ? ip->size : MAXPATH - 1));
+  iunlock(ip);
+  if(n <= 0){
+    printf("symlink target failed to read\n");
+    iput(ip);
+    return 0;
+  }
+  path[n] = '\0';
+  printf("symlink %d->%s\n", ip->inum, path);
+  struct inode* next = namei(path);
+  
+  if(next == ip){
+    iput(next);
+    return 0;
+  }
+  if(next == 0){
+    printf("symlink not found %s\n", path);
+    return 0;
+  }
+  iput(ip);
+  return follow_symlink(next, depth + 1);
 }
 
 // Look for a directory entry in a directory.

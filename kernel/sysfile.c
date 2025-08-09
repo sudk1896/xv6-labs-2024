@@ -301,6 +301,38 @@ create(char *path, short type, short major, short minor)
   return 0;
 }
 
+
+uint64 sys_symlink(void){
+  char target[MAXPATH], path[MAXPATH];
+  int n, n1;
+  struct inode* ip;
+  if((n1 = argstr(0, target, MAXPATH)) < 0)
+     return -1;
+  if((n = argstr(1, path, MAXPATH)) < 0)
+     return -1;
+  begin_op();
+  ip = create(path, T_SYMLINK, 0, 0);
+  //printf("created symlink\n");
+  uint off = 0;
+  //printf("n1 %d\n", n1);
+  while(off < n1){
+    n1 = (n1 - off < BSIZE ? n1 - off : BSIZE);
+    int written = writei(ip, 0, (uint64)(target + off), off, n1);
+    if(written < 0){
+      iunlockput(ip);
+      return -1;
+    }
+    off += written;
+  }
+  /*
+  char T[n1];
+  n = readi(ip, 0, (uint64)T, 0, n1);
+  printf("inode target path: %s\n", T);*/
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
 uint64
 sys_open(void)
 {
@@ -332,6 +364,26 @@ sys_open(void)
       iunlockput(ip);
       end_op();
       return -1;
+    }
+  }
+
+  if(ip->type == T_SYMLINK){
+    printf("Symlink inode %s\n", path);
+    if(omode & O_NOFOLLOW){
+      printf("Nofollow do nothing\n"); 
+    }else{
+    iunlock(ip);
+    struct inode* ret = follow_symlink(ip, 0);
+    if(ret == 0){
+      printf("follow unsuccessful\n");
+      iput(ip);
+      end_op();
+      return -1;
+    }
+    printf("got end node %s\n", path);
+    //iput(ip);
+    ip = ret;
+    ilock(ip);
     }
   }
 

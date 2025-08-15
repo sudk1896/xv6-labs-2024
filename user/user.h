@@ -59,3 +59,6 @@ int statistics(void*, int);
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+
+void* mmap(void*, size_t, int, int, int, off_t);
+int munmap(void*, size_t);

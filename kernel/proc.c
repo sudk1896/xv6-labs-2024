@@ -131,6 +131,10 @@ found:
     release(&p->lock);
     return 0;
   }
+  
+  for(int i=0;i<16;i++){
+     p->vma[i].allocated = 0;
+  }
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -252,6 +256,18 @@ userinit(void)
   p->state = RUNNABLE;
 
   release(&p->lock);
+}
+
+uint64 mmap_inc(int n){
+  uint64 sz;
+  struct proc* p = myproc();
+  sz = p->sz;
+  if(n>0){
+    p->sz += n;
+    return sz;
+  }
+
+  return sz;
 }
 
 // Grow or shrink user memory by n bytes.

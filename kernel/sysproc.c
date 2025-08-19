@@ -94,6 +94,24 @@ sys_uptime(void)
 
 uint64
 sys_mmap(void){
+  int len, prot, flags, fd;
+  argint(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
+  struct proc* cur = myproc();
+  for(int i = 0; i < 16; i++){
+     if(cur->vma[i].allocated == 0){
+       cur->vma[i].len = len;
+       cur->vma[i].prot = prot;
+       cur->vma[i].flags = flags;
+       cur->vma[i].fd = fd;
+       cur->vma[i].f = filedup(cur->ofile[fd]);
+       cur->vma[i].allocated = 1;
+       cur->vma[i].start = (void*)mmap_inc(len);
+       return (uint64)cur->vma[i].start;
+     }
+  }
   return 0xffffffffffffffff;
 }
 

@@ -109,6 +109,7 @@ sys_mmap(void){
        cur->vma[i].f = filedup(cur->ofile[fd]);
        cur->vma[i].allocated = 1;
        cur->vma[i].start = (void*)mmap_inc(len);
+       printf("start 0x%lx end 0x%lx\n", (uint64)cur->vma[i].start, (uint64)cur->vma[i].start + len);
        return (uint64)cur->vma[i].start;
      }
   }

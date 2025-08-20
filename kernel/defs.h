@@ -8,6 +8,7 @@ struct file;
 struct inode;
 struct pipe;
 struct proc;
+struct vma_struct;
 struct spinlock;
 struct sleeplock;
 struct stat;
@@ -37,6 +38,7 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int 		map_file(struct file*, uint64);
 
 // fs.c
 void            fsinit(int);
@@ -90,7 +92,9 @@ int             cpuid(void);
 void            exit(int);
 int             fork(void);
 int             growproc(int);
-uint64             mmap_inc(int);
+uint64          mmap_inc(int);
+int             map_mmap(pagetable_t, uint64, uint64, struct vma_struct);
+int             check_vma(uint64);
 void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);

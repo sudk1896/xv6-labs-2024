@@ -258,6 +258,30 @@ userinit(void)
   release(&p->lock);
 }
 
+// Checks if the va belongs to any VMA of the proc
+int check_vma(uint64 va){
+  struct proc* p = myproc();
+  for(int i=0;i<16;i++){
+    if(p->vma[i].allocated && va>=(uint64)p->vma[i].start && va<=(uint64)p->vma[i].start + p->vma[i].len){
+       return i;
+    }
+  }
+
+  return -1;
+}
+
+int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma){
+  int r = map_file(vma.f, mem);
+  if(r<0) return -1;
+  if(mappages(pagetable,va,PGSIZE,mem,PTE_U|PTE_R|PTE_W)<0){
+    kfree((void*)mem);
+    uvmunmap(pagetable, va, 1, 0);
+    return -1;
+  }
+
+  return 0;
+}
+
 uint64 mmap_inc(int n){
   uint64 sz;
   struct proc* p = myproc();
@@ -269,6 +293,8 @@ uint64 mmap_inc(int n){
 
   return sz;
 }
+
+
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.

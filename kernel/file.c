@@ -180,3 +180,11 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int map_file(struct file* f, uint64 mem){
+  int r = 0;
+  ilock(f->ip);
+  if((r = readi(f->ip,0,mem,f->off,PGSIZE))>0)
+    f->off += r;
+  iunlock(f->ip);
+  return r;
+}

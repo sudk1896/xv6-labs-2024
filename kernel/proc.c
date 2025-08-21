@@ -5,7 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+#include "fcntl.h"
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -272,6 +272,7 @@ int check_vma(uint64 va){
 
 int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma){
   int r = map_file(vma.f, mem);
+  printf("Read %d bytes into mem: %lx\n", r, mem);
   if(r<0) return -1;
   if(mappages(pagetable,va,PGSIZE,mem,PTE_U|PTE_R|PTE_W)<0){
     kfree((void*)mem);
@@ -279,6 +280,28 @@ int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma
     return -1;
   }
 
+  return 0;
+}
+
+int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vma){
+  printf("Entering munmap\n");
+  uint64 va = PGROUNDDOWN(addr);
+  int npages = len/PGSIZE;
+  uint64 end = va + len;
+  for(; va < end; va += PGSIZE){
+     pte_t* pte = walk(pagetable, va, 0);
+     printf("Pte: %lx\n", *pte);
+     if((*pte & PTE_D) && (vma.flags & MAP_SHARED)){
+       int nbytes = filewrite(vma.f, va, PGSIZE);
+       printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
+     }
+  } 
+  
+  if(len == vma.len){
+    fileclose(vma.f);
+  } 
+  va = PGROUNDDOWN(addr);
+  uvmunmap(pagetable, va, npages, 1);
   return 0;
 }
 

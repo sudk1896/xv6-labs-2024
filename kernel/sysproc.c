@@ -118,5 +118,17 @@ sys_mmap(void){
 
 uint64
 sys_munmap(void){
-  return -1;
+  uint64 addr;
+  int len;
+  argaddr(0, &addr);
+  argint(1, &len);
+  int vma_idx = check_vma(addr);
+  if(vma_idx < 0) return -1;
+  struct proc* cur = myproc();
+  int ret = unmap_mmap(cur->pagetable, addr, len, cur->vma[vma_idx]);
+  if(ret==0 && cur->vma[vma_idx].len==len){
+    cur->vma[vma_idx].allocated = 0;
+  }
+
+  return ret;
 }

@@ -38,7 +38,9 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
-int 		map_file(struct file*, uint64);
+int 		map_file(struct file*, uint64, uint);
+int 		mmap_filewrite(struct file*, uint64, uint);
+int             is_mmap_allowed(struct file*, int, int); 
 
 // fs.c
 void            fsinit(int);

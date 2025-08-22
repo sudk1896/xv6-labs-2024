@@ -271,7 +271,8 @@ int check_vma(uint64 va){
 }
 
 int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma){
-  int r = map_file(vma.f, mem);
+  uint off = (va - (uint64)vma.start)/PGSIZE;
+  int r = map_file(vma.f, mem, off*PGSIZE);
   printf("Read %d bytes into mem: %lx\n", r, mem);
   if(r<0) return -1;
   if(mappages(pagetable,va,PGSIZE,mem,PTE_U|PTE_R|PTE_W)<0){
@@ -292,7 +293,9 @@ int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vm
      pte_t* pte = walk(pagetable, va, 0);
      printf("Pte: %lx\n", *pte);
      if((*pte & PTE_D) && (vma.flags & MAP_SHARED)){
-       int nbytes = filewrite(vma.f, va, PGSIZE);
+       uint off = (va - (uint64)vma.start)/PGSIZE;
+       printf("va %lx start %lx\n", va, (uint64)vma.start);
+       int nbytes = mmap_filewrite(vma.f, va, off*PGSIZE);
        printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
      }
   } 
@@ -308,9 +311,9 @@ int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vm
 uint64 mmap_inc(int n){
   uint64 sz;
   struct proc* p = myproc();
-  sz = p->sz;
+  sz = PGROUNDUP(p->sz);
   if(n>0){
-    p->sz += n;
+    p->sz = sz + n;
     return sz;
   }
 

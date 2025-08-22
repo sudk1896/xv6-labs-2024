@@ -100,6 +100,10 @@ sys_mmap(void){
   argint(3, &flags);
   argint(4, &fd);
   struct proc* cur = myproc();
+  if(is_mmap_allowed(cur->ofile[fd], prot, flags) == 0){
+    printf("mmap not allowed\n");
+    return 0xffffffffffffffff;
+  }
   for(int i = 0; i < 16; i++){
      if(cur->vma[i].allocated == 0){
        cur->vma[i].len = len;

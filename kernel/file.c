@@ -180,11 +180,44 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
-int map_file(struct file* f, uint64 mem){
+int mmap_filewrite(struct file* f, uint64 addr, uint off){
+ int ret = 0, r = 0;
+ int n = PGSIZE;
+ int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    int i = 0;
+    while(i < n){
+      int n1 = n - i;
+      if(n1 > max)
+        n1 = max;
+
+      begin_op();
+      ilock(f->ip);
+      if ((r = writei(f->ip, 1, addr + i, off, n1)) > 0)
+        off += r;
+      iunlock(f->ip);
+      end_op();
+
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+    ret = (i == n ? n : -1);
+    return ret;
+}
+
+int is_mmap_allowed(struct file* f, int prot, int flags){
+  if((f->readable==1 && f->writable==0) && (prot==2||prot==3||prot==6||prot==7) && flags==1) return 0;
+  else return 1;
+}
+
+int map_file(struct file* f, uint64 mem, uint off){
   int r = 0;
   ilock(f->ip);
-  if((r = readi(f->ip,0,mem,f->off,PGSIZE))>0)
-    f->off += r;
+  //uint off = 0;
+  if((r = readi(f->ip,0,mem,off,PGSIZE))>0)
+    off += r;
   iunlock(f->ip);
   return r;
 }

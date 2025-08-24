@@ -365,6 +365,18 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  
+  np->vma_begin = p->vma_begin;
+  for(int i=0;i<16;i++){
+     np->vma[i].start = p->vma[i].start;
+     np->vma[i].len = p->vma[i].len;
+     np->vma[i].prot = p->vma[i].prot;
+     np->vma[i].flags = p->vma[i].flags;
+     np->vma[i].fd = p->vma[i].fd;
+     np->vma[i].f = filedup(p->ofile[p->vma[i].fd]);
+     np->vma[i].offset = p->vma[i].offset;
+     np->vma[i].allocated = p->vma[i].allocated;
+  }
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -428,6 +440,13 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+ 
+  for(int i=0;i<16;i++){
+     if(p->vma[i].allocated){
+       int ret = unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma[i]);
+       printf("Exiting unmap ret value %d\n", ret);
+     }
   }
 
   begin_op();

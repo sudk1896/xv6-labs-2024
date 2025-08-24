@@ -77,7 +77,7 @@ usertrap(void)
       setkilled(p);
     }
     else{
-     printf("VMA idx %d\n", vma_idx);
+     //printf("VMA idx %d\n", vma_idx);
      void* mem = kalloc();
      memset(mem, 0, PGSIZE);
      if(mem == 0){
@@ -86,7 +86,7 @@ usertrap(void)
       struct proc* cur = myproc();
       struct vma_struct vma = cur->vma[vma_idx];
       int map_res = map_mmap(cur->pagetable,(uint64)mem,fault_addr, vma);
-      printf("map res %d\n", map_res);
+      //printf("map res %d\n", map_res);
       if(map_res<0) setkilled(p);
     }
    }else {

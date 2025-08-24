@@ -182,7 +182,7 @@ filewrite(struct file *f, uint64 addr, int n)
 
 int mmap_filewrite(struct file* f, uint64 addr, uint off){
  int ret = 0, r = 0;
- int n = PGSIZE;
+ int n = (off + PGSIZE > f->ip->size) ? (f->ip->size - off) : PGSIZE;
  int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
     while(i < n){
@@ -215,6 +215,7 @@ int is_mmap_allowed(struct file* f, int prot, int flags){
 int map_file(struct file* f, uint64 mem, uint off){
   int r = 0;
   ilock(f->ip);
+  //printf("inode sz: %d\n", f->ip->size);
   //uint off = 0;
   if((r = readi(f->ip,0,mem,off,PGSIZE))>0)
     off += r;

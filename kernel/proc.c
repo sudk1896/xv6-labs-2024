@@ -262,7 +262,7 @@ userinit(void)
 int check_vma(uint64 va){
   struct proc* p = myproc();
   for(int i=0;i<16;i++){
-    if(p->vma[i].allocated && va>=(uint64)p->vma[i].start && va<=(uint64)p->vma[i].start + p->vma[i].len){
+    if(p->vma[i].allocated && va>=(uint64)p->vma[i].start && va<(uint64)p->vma[i].start + p->vma[i].len){
        return i;
     }
   }
@@ -292,9 +292,9 @@ int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vm
   for(; va < end; va += PGSIZE){
      pte_t* pte = walk(pagetable, va, 0);
      printf("Pte: %lx\n", *pte);
-     if((*pte & PTE_D) && (vma.flags & MAP_SHARED)){
+     if(*pte && (*pte & PTE_D) && (vma.flags & MAP_SHARED)){
        uint off = (va - (uint64)vma.start)/PGSIZE;
-       printf("va %lx start %lx\n", va, (uint64)vma.start);
+       printf("va %lx start %lx off %d\n", va, (uint64)vma.start, off);
        int nbytes = mmap_filewrite(vma.f, va, off*PGSIZE);
        printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
      }
@@ -304,7 +304,11 @@ int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vm
     fileclose(vma.f);
   } 
   va = PGROUNDDOWN(addr);
-  uvmunmap(pagetable, va, npages, 1);
+  for(int i = 0; i < npages; i++){
+     if(walkaddr(pagetable, va+i)){
+       uvmunmap(pagetable, va+i, 1, 1);
+     }
+  }
   return 0;
 }
 

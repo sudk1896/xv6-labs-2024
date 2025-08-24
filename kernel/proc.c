@@ -124,7 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p->vma_begin = TRAPFRAME;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -313,15 +313,13 @@ int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vm
 }
 
 uint64 mmap_inc(int n){
-  uint64 sz;
   struct proc* p = myproc();
-  sz = PGROUNDUP(p->sz);
   if(n>0){
-    p->sz = sz + n;
-    return sz;
+    p->vma_begin -= n;
+    return p->vma_begin;
   }
 
-  return sz;
+  return p->vma_begin;
 }
 
 

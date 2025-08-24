@@ -115,5 +115,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 vma_begin;
   struct vma_struct vma[16];   // VMA for the process 
 };

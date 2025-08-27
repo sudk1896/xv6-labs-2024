@@ -112,7 +112,7 @@ sys_mmap(void){
        cur->vma[i].f = filedup(cur->ofile[fd]);
        cur->vma[i].allocated = 1;
        cur->vma[i].start = (void*)mmap_inc(len);
-       printf("start 0x%lx end 0x%lx\n", (uint64)cur->vma[i].start, (uint64)cur->vma[i].start + len);
+       //printf("start 0x%lx end 0x%lx\n", (uint64)cur->vma[i].start, (uint64)cur->vma[i].start + len);
        return (uint64)cur->vma[i].start;
      }
   }
@@ -129,7 +129,7 @@ sys_munmap(void){
   if(vma_idx < 0) return -1;
   struct proc* cur = myproc();
   int ret = unmap_mmap(cur->pagetable, addr, len, &cur->vma[vma_idx]); 
-  printf("munmap retVal %d\n", ret);
+  //printf("munmap retVal %d\n", ret);
   if(ret==0 && cur->vma[vma_idx].len == 0){
     cur->vma[vma_idx].allocated = 0;
     cur->vma[vma_idx].offset = 0;

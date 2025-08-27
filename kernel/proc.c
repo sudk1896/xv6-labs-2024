@@ -290,7 +290,7 @@ int vma_copy(struct proc* parent, struct proc* child){
        // for the VMA region.
        va = (uint64)parent->vma[i].start;
        uint64 end = va + parent->vma[i].len;
-       for(;va <= end; va += PGSIZE){
+       for(;va < end; va += PGSIZE){
           pte_t* pte = walk(parent->pagetable, va, 0);
 	  if(*pte && (*pte & PTE_V)){
 	    uint64 pa = PTE2PA(*pte);
@@ -317,7 +317,7 @@ int vma_copy(struct proc* parent, struct proc* child){
 int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma){
   uint off = (va - (uint64)vma.start)/PGSIZE + vma.offset;
   int r = map_file(vma.f, mem, off*PGSIZE);
-  printf("Read %d bytes into mem: %lx\n", r, mem);
+  //printf("Read %d bytes into mem: %lx\n", r, mem);
   if(r<0) return -1;
   if(mappages(pagetable,va,PGSIZE,mem,PTE_U|PTE_R|PTE_W)<0){
     kfree((void*)mem);
@@ -329,18 +329,18 @@ int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma
 }
 
 int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct* vma){
-  printf("Entering munmap\n");
+  //printf("Entering munmap\n");
   uint64 va = PGROUNDDOWN(addr);
   uint64 end = va + len;
   // If its MAP_SHARED, write any changes from phy mem to the file
   for(; va <= end; va += PGSIZE){
      pte_t* pte = walk(pagetable, va, 0);
-     printf("Pte: %lx\n", *pte);
+     //printf("Pte: %lx\n", *pte);
      if(*pte && (*pte & PTE_D) && (vma->flags & MAP_SHARED)){
        uint off = (va - (uint64)vma->start)/PGSIZE + vma->offset;
-       printf("va %lx start %lx off %d\n", va, (uint64)vma->start, off);
-       int nbytes = mmap_filewrite(vma->f, va, off*PGSIZE);
-       printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
+       //printf("va %lx start %lx off %d\n", va, (uint64)vma->start, off);
+       mmap_filewrite(vma->f, va, off*PGSIZE);
+       //printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
      }
   } 
   
@@ -452,8 +452,6 @@ fork(void)
      }
   }
 
-
-
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -520,8 +518,8 @@ exit(int status)
 	  }
        }
        */
-       int ret = unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma);
-       printf("Unmapping the whole VMA ret value %d\n", ret);
+       unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma);
+       //printf("Unmapping the whole VMA ret value %d\n", ret);
      }
   }
 

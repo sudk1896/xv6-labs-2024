@@ -86,10 +86,9 @@ struct vma_struct{
   int len;
   int prot;
   int flags;
-  int fd;
   struct file* f;
   long int offset;
-  int allocated;
+  int allocated; 
 };
 
 // Per-process state

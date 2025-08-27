@@ -134,6 +134,7 @@ found:
   
   for(int i=0;i<16;i++){
      p->vma[i].allocated = 0;
+     p->vma[i].offset = 0;
   }
 
   // An empty user page table.
@@ -164,6 +165,10 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   for(int i=0;i<16;i++){
     p->vma[i].allocated = 0;
+    p->vma[i].start = 0;
+    p->vma[i].len = 0;
+    p->vma[i].flags = 0;
+    p->vma[i].offset = 0;
   }
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
@@ -261,6 +266,10 @@ userinit(void)
   release(&p->lock);
 }
 
+int check_vma_writeable(struct vma_struct* vma){
+  return (vma->prot != PROT_READ);
+}
+
 // Checks if the va belongs to any VMA of the proc
 int check_vma(uint64 va){
   struct proc* p = myproc();
@@ -273,8 +282,40 @@ int check_vma(uint64 va){
   return -1;
 }
 
+int vma_copy(struct proc* parent, struct proc* child){
+  uint64 va;
+  for(int i=0;i<16;i++){
+     if(parent->vma[i].allocated){
+       // allocate the physical mem in the child process
+       // for the VMA region.
+       va = (uint64)parent->vma[i].start;
+       uint64 end = va + parent->vma[i].len;
+       for(;va <= end; va += PGSIZE){
+          pte_t* pte = walk(parent->pagetable, va, 0);
+	  if(*pte && (*pte & PTE_V)){
+	    uint64 pa = PTE2PA(*pte);
+	    uint flags = PTE_FLAGS(*pte);
+	    char* mem;
+	    if((mem = kalloc()) == 0)
+	      goto err;
+	    memmove(mem, (char*)pa, PGSIZE);
+	    if(mappages(child->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
+	      kfree(mem);
+	      goto err;
+	    }
+	  }
+       }
+     }
+  }
+  return 0;
+
+  err:
+   uvmunmap(child->pagetable, 0, va/PGSIZE, 1);
+   return -1;
+}
+
 int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma){
-  uint off = (va - (uint64)vma.start)/PGSIZE;
+  uint off = (va - (uint64)vma.start)/PGSIZE + vma.offset;
   int r = map_file(vma.f, mem, off*PGSIZE);
   printf("Read %d bytes into mem: %lx\n", r, mem);
   if(r<0) return -1;
@@ -287,31 +328,42 @@ int map_mmap(pagetable_t pagetable, uint64 mem, uint64 va, struct vma_struct vma
   return 0;
 }
 
-int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct vma){
+int unmap_mmap(pagetable_t pagetable, uint64 addr, int len, struct vma_struct* vma){
   printf("Entering munmap\n");
   uint64 va = PGROUNDDOWN(addr);
-  int npages = len/PGSIZE;
   uint64 end = va + len;
-  for(; va < end; va += PGSIZE){
+  // If its MAP_SHARED, write any changes from phy mem to the file
+  for(; va <= end; va += PGSIZE){
      pte_t* pte = walk(pagetable, va, 0);
      printf("Pte: %lx\n", *pte);
-     if(*pte && (*pte & PTE_D) && (vma.flags & MAP_SHARED)){
-       uint off = (va - (uint64)vma.start)/PGSIZE;
-       printf("va %lx start %lx off %d\n", va, (uint64)vma.start, off);
-       int nbytes = mmap_filewrite(vma.f, va, off*PGSIZE);
+     if(*pte && (*pte & PTE_D) && (vma->flags & MAP_SHARED)){
+       uint off = (va - (uint64)vma->start)/PGSIZE + vma->offset;
+       printf("va %lx start %lx off %d\n", va, (uint64)vma->start, off);
+       int nbytes = mmap_filewrite(vma->f, va, off*PGSIZE);
        printf("Wrote back nbytes: %d from va %lx\n", nbytes, va);
      }
   } 
   
-  if(len == vma.len){
-    fileclose(vma.f);
-  } 
+  // unmap the VMA'd region and free the physical mem
   va = PGROUNDDOWN(addr);
-  for(int i = 0; i < npages; i++){
-     if(walkaddr(pagetable, va+i)){
-       uvmunmap(pagetable, va+i, 1, 1);
+  for(; va <= end; va+=PGSIZE){
+     if(walkaddr(pagetable, va)){
+       uvmunmap(pagetable, va, 1, 1);
      }
   }
+  
+  va = PGROUNDDOWN(addr);  
+  if(va == (uint64)vma->start){
+    vma->start = (void*)(va + len);
+    vma->offset += (len/PGSIZE);
+  }
+
+  vma->len -= len;
+  // whole mmap'd region has been unmapped, close the file
+  if(vma->len == 0){
+    fileclose(vma->f);
+  }
+
   return 0;
 }
 
@@ -367,6 +419,13 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  if(vma_copy(p, np) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
   np->sz = p->sz;
  
   // copy saved user registers.
@@ -387,10 +446,8 @@ fork(void)
        np->vma[i].start = p->vma[i].start;
        np->vma[i].len = p->vma[i].len;
        np->vma[i].prot = p->vma[i].prot;
-       np->vma[i].flags = p->vma[i].flags;
-       np->vma[i].fd = p->vma[i].fd;
-       if(np->ofile[np->vma[i].fd])
-         np->vma[i].f = filedup(np->ofile[np->vma[i].fd]);
+       np->vma[i].flags = p->vma[i].flags; 
+       np->vma[i].f = filedup(p->vma[i].f);
        np->vma[i].offset = p->vma[i].offset;
      }
   }
@@ -453,7 +510,7 @@ exit(int status)
  
   for(int i=0;i<16;i++){
      if(p->vma[i].allocated){
-       //int ret = unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma[i]);
+       /*
        uint64 va = (uint64)p->vma[i].start;
        uint64 end = va + p->vma[i].len;
        printf("Left over addr for i %d begin %lx end %lx\n",i, va, end);
@@ -462,7 +519,9 @@ exit(int status)
 	    uvmunmap(p->pagetable, va, 1, 1);
 	  }
        }
-       //printf("Exiting unmap ret value %d\n", ret);
+       */
+       int ret = unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma);
+       printf("Unmapping the whole VMA ret value %d\n", ret);
      }
   }
 

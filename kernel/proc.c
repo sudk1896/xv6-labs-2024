@@ -508,16 +508,6 @@ exit(int status)
  
   for(int i=0;i<16;i++){
      if(p->vma[i].allocated){
-       /*
-       uint64 va = (uint64)p->vma[i].start;
-       uint64 end = va + p->vma[i].len;
-       printf("Left over addr for i %d begin %lx end %lx\n",i, va, end);
-       for(;va <= end; va += PGSIZE){
-          if(walkaddr(p->pagetable, va)!=0){
-	    uvmunmap(p->pagetable, va, 1, 1);
-	  }
-       }
-       */
        unmap_mmap(p->pagetable, (uint64)p->vma[i].start, p->vma[i].len, p->vma);
        //printf("Unmapping the whole VMA ret value %d\n", ret);
      }

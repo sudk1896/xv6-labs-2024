@@ -1,0 +1,48 @@
+This was a real fun lab and it took me 2+ hours every day for ~1 week to solve it.
+This is how I solved it. The VMA struct keeps track of the prot, flags, start and length of the
+VMA. It also stores the file pointer. There is an offset field, this is used to keep track 
+of the file offset if we unmap any mmap'd area from the beginning.
+
+If the scause register is 0xd or 0xf, we first check if the faulting address
+belongs to any active VMA. If it does, we do some sanitary checks like
+are we trying to write to a VMA that is read only.
+Then we call the map_mmap fn.
+
+The map_mmap just reads in the data from the file into the mmap'd region and
+then creates a mapping in the process pagetable. If all we had to do was just
+run mmap and then access the mmap'd region data, this would work.
+
+The tricky case is when we do munmap. The lab makes it easy for us by stating the 
+munmap would only be called from the start or the end of the mmap'd area. It won't
+be called from the middle which would leave holes in the mmap'd region. With this,
+keeping track of the length and start pointer for the VMA region is simple. 
+
+Lets say, we have `p = mmap(0, 3*PGSIZE, ...)`. If we had to read `p+2*PGSIZE`,
+we would calculate the file offset like so `(p+2*PGSIZE) - p)/PGSIZE * PGSIZE`.
+The mmap'd region are blocks of PGSIZE so we multiply by PGSIZE. Now, lets say
+we do `munmap(0, PGSIZE)`, that is we unmap the first page of the mmap'd area.
+There are two things to keep in mind,
+1. If we try to access the munmap'd area, we should kill the process
+2. When we munmap, we must update the start pointer of the VMA and also the len
+This is required because when `len==0` we must close the file pointer.
+
+`munmap(0, PGSIZE)`
+this will modify the VMA like so, `vma.start = p + PGSIZE` since the first page has 
+been munmap'd. `vma.len -= PGSIZE`, the size of the VMA has decreased.
+
+Now, lets say we try to access `p + 2*PGSIZE`, the offset would be `p + 2*PGSIZE - (p + PGSIZE)`/PGSIZE,
+clearly this is wrong. We are still accessing the 3rd page of the file but per the above offset
+calculation we would be accessing the second page. Hence, whenever we munmap a region at the start of the
+VMA, we increment the offset by the number of pages which were munmapd. Every time we read from
+the file, we add this `vma.offset` to get the actual offset.
+
+In `unmap_mmap`, we would write the dirty pages back to the file. Unmap and free the memory of the
+VMA. And if the length of VMA becomes 0, we close the file. 
+
+In fork, we run `vma_copy` which will copy the physical memory of the VMA region in the parent
+to the child. Similar to how we copy the process memory in uvmcopy. On exit, we call
+unmap_mmap to unmap the entire VMA region.
+
+That encapsulates the major challenges in implementing mmap. This was a multi-step process and 
+was done iteratively.
+
